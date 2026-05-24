@@ -1,0 +1,13 @@
+source /opt/ros/humble/setup.bash
+source ~/elec-392-project-blekinge-12/ros2_ws/install/setup.bash
+ros2 run robocar_base video_recorder_node --ros-args -p input_topic:=/camera/image_raw -p output_path:=recorded_output.mp4 -p fps:=15.0
+
+
+
+
+
+mask recorded_output
+
+source /opt/ros/humble/setup.bash
+source ~/elec-392-project-blekinge-12/ros2_ws/install/setup.bash
+ros2 run robocar_base video_recorder_node --ros-args -p input_topic:=/segmentation/mask -p output_path:=recorded_output.mp4 -p fps:=15.0
