@@ -4,6 +4,14 @@ A safety-first autonomous taxi built for the Town of Quackston using a SunFounde
 
 This repository contains the full autonomy stack developed by Team Rust-eze for Queen's ELEC 392. The vehicle follows lanes, detects stop lines, plans routes through a miniature city, interfaces with the Vehicle Positioning and Fare System (VPFS), picks up and drops off duck passengers, signals its intentions, and stops for obstacles.
 
+### Tech Stack
+
+* Python / C++
+* ROS2
+* OpenCV for vision processing
+* Raspberry Pi hardware platform
+* Linux robotics environment
+
 ## Table of Contents
 
 - [Project Overview](#project-overview)
