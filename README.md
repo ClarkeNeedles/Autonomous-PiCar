@@ -1,4 +1,4 @@
-# ELEC 392 - Autonomous Robotic Taxi
+# Autonomous Robotic Taxi
 
 A safety-first autonomous taxi built for the Town of Quackston using a SunFounder PiCar-X, ROS 2, computer vision, and a Google Coral Edge TPU.
 
@@ -44,7 +44,10 @@ Safety is treated as the first design priority. The vehicle includes ultrasonic 
 - Turn-queue execution at intersections, including tank-steering behavior.
 - ROS-to-hardware control for PiCar-X motors, steering, LEDs, and sensors.
 - Safety logic that can pause or stop the vehicle when obstacles are detected.
-- Calibration tools, setup scripts, development logbooks, model artifacts, recordings, and final-report documentation.
+- A development logbook used to document design decisions, subsystem trade-offs, integration issues, testing results, and weekly progress.
+- Recordings that demonstrate autonomous driving behavior and show how the segmentation model interprets the road.
+- Docker-based development workflows for testing ROS 2 nodes in a consistent environment before deploying to the vehicle.
+- Calibration tools, setup scripts, model artifacts, recordings, and final-report documentation.
 
 ## System Architecture
 
@@ -85,6 +88,8 @@ The final report documents the following validation results:
 - **Full autonomous fare-style runs**: **2/4** completed in integrated testing.
 
 The competition run itself was affected by a software deployment/version-control issue, so controlled validation trials are the better representation of the system's actual capability.
+
+Supporting recordings are included in `recordings/`. These videos were used during development to review the vehicle's behavior, inspect the generated segmentation output, and debug how perception, lane following, stop detection, and turning logic interacted during real runs.
 
 ## Project Structure
 
@@ -323,10 +328,12 @@ Additional troubleshooting notes are available in `utils/troubleshooting.md`.
 ## Development Notes
 
 - The autonomy stack is intentionally modular so each subsystem can be tested independently with `ros2 topic echo`, `ros2 topic pub`, and package-specific launch scripts.
+- Docker containers were used to keep ROS 2 development and node testing consistent across machines, reducing dependency drift while perception, hardware, behavior, navigation, and localization nodes were developed in parallel.
 - The vision model was trained from vehicle camera data collected in the Quackston environment and labeled with pixel-wise masks.
 - Training used augmentation for lighting, motion blur, exposure variation, shear, and noise before conversion to TensorFlow Lite for Edge TPU deployment.
 - Navigation map data lives in `ros2_ws/src/navigation_pkg/config/map_nodes.csv` and `ros2_ws/src/navigation_pkg/config/map_edges.csv`.
-- Development history, design decisions, testing notes, and weekly progress are documented in `logbook/`.
+- Development history, design decisions, rejected alternatives, testing notes, integration lessons, and weekly progress are documented in `logbook/`.
+- Driving and debug recordings in `recordings/` provide visual evidence of the segmentation model and autonomy stack operating on the Quackston course.
 - The final engineering report is included as `ELEC392_Final_Report.pdf`.
 
 ## Course Information
