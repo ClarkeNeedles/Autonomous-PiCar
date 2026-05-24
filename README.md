@@ -1,249 +1,341 @@
-[![Open in Visual Studio Code](https://classroom.github.com/assets/open-in-vscode-2e0aaae1b6195c2367325f4f02e2d04e9abb55f0b24a779b69b11b9e10269abc.svg)](https://classroom.github.com/online_ide?assignment_repo_id=22211386&assignment_repo_type=AssignmentRepo)
 # ELEC 392 - Autonomous Robotic Taxi
 
-A repository for code used in Smith Engineering ELEC 392 design course. This project uses a **Sunfounder PiCar-X** and **Coral USB Accelerator** to develop a robotic taxi capable of operating autonomously in a miniature town populated with rubber duckies (Quackston).
+A safety-first autonomous taxi built for the Town of Quackston using a SunFounder PiCar-X, ROS 2, computer vision, and a Google Coral Edge TPU.
 
-## Features
+This repository contains the full autonomy stack developed by Team Rust-eze for Queen's ELEC 392. The vehicle follows lanes, detects stop lines, plans routes through a miniature city, interfaces with the Vehicle Positioning and Fare System (VPFS), picks up and drops off duck passengers, signals its intentions, and stops for obstacles.
 
-- **Logbook**: Implements a logbook structure for your team to record progress in accordance to ELEC 392 specifications
-- **Utilities**: Provides some basic utilities and to get you started with calibration of your PiCar-X
-- **Setup Scripts**: Bash scripts to help you install dependencies and repos needed to use the PiCar-X and Coral USB Accelerator
-- **Sample Code**: Ready-to-use examples demonstrating all key features
+## Table of Contents
+
+- [Project Overview](#project-overview)
+- [What This Repository Demonstrates](#what-this-repository-demonstrates)
+- [System Architecture](#system-architecture)
+- [Performance Highlights](#performance-highlights)
+- [Project Structure](#project-structure)
+- [Hardware Requirements](#hardware-requirements)
+- [Software Requirements](#software-requirements)
+- [Installation](#installation)
+- [Running the System](#running-the-system)
+- [Calibration and Utilities](#calibration-and-utilities)
+- [Development Notes](#development-notes)
+- [Course Information](#course-information)
+- [License](#license)
+
+## Project Overview
+
+The goal of this project was to design and validate an autonomous taxi for Quackston, a miniature city with lane markings, intersections, stop lines, pedestrians, and fare pickup/drop-off tasks. The final design uses a modular ROS 2 Humble architecture running on the vehicle's Raspberry Pi.
+
+The stack is organized around five main responsibilities:
+
+- **Perception**: A TensorFlow Lite semantic segmentation model classifies camera pixels as background, green lane markings, or yellow stop lines.
+- **Control**: A PD lane-following controller converts the segmentation mask into velocity commands and steering corrections.
+- **Behavior Management**: A finite state machine coordinates driving, stopping, fare handling, turn execution, and safety overrides.
+- **Localization and Fare Handling**: A VPFS bridge receives global vehicle pose and fare data from the external Quackston system.
+- **Navigation**: A graph-based map planner uses Dijkstra's algorithm to create turn queues for pickup and drop-off routes.
+
+Safety is treated as the first design priority. The vehicle includes ultrasonic obstacle detection, emergency stop behavior, rear brake lights, turn signals, hazard signaling, audio alerts, and a CARE passenger restraint system.
+
+## What This Repository Demonstrates
+
+- A full ROS 2 autonomy stack split into perception, behavior, navigation, localization, control, and hardware packages.
+- Real-time camera-based lane following using semantic segmentation on a Coral Edge TPU.
+- Stop-line detection using the same vision pipeline as lane detection.
+- VPFS integration for autonomous taxi fare selection, pickup, and drop-off.
+- Dijkstra route planning over a directed map of Quackston.
+- Turn-queue execution at intersections, including tank-steering behavior.
+- ROS-to-hardware control for PiCar-X motors, steering, LEDs, and sensors.
+- Safety logic that can pause or stop the vehicle when obstacles are detected.
+- Calibration tools, setup scripts, development logbooks, model artifacts, recordings, and final-report documentation.
+
+## System Architecture
+
+The robot is built as a set of ROS 2 nodes that communicate through topics:
+
+| Subsystem | Package | Key Nodes | Role |
+| --- | --- | --- | --- |
+| Perception and autonomy | `perception` | `segmentation_node`, `autonomy_node` | Runs Edge TPU segmentation, filters masks, follows lanes, detects stop lines, publishes `/cmd_vel`, `/tank_steer`, and `/turn_signal_cmd`. |
+| Behavior management | `behavior_pkg` | `behavior_manager` | High-level finite state machine for fare state, driving permission, pickup/drop-off flow, and safety coordination. |
+| Navigation | `navigation_pkg` | `map_planner` | Loads Quackston map CSVs, computes shortest paths, and publishes turn queues. |
+| Localization and VPFS | `localization_pkg` | `vpfs_queue_bridge`, `vpfs`, `odometry` | Polls VPFS for pose and fare information and publishes route context. |
+| Hardware interface | `hardware_pkg` | `cmd_vel_to_robocar`, `ultrasonic`, `grayscale` | Converts ROS commands to Robot HAT motor/servo actions and publishes sensor states. |
+| Control experiments | `control_pkg` | `lane_follow`, `pid` | C++ control prototypes and experiments. |
+| Base robot utilities | `robocar_base` | camera, recorder, command bridge nodes | Supporting robot drivers and development utilities. |
+
+Core topic flow:
+
+```text
+camera -> segmentation_node -> /segmentation/mask -> autonomy_node
+autonomy_node -> /cmd_vel, /tank_steer, /turn_signal_cmd -> cmd_vel_to_robocar
+ultrasonic -> /ultrasonic/detected -> behavior_manager and hardware safety logic
+vpfs_queue_bridge -> /odometry/filtered, /vpfs/current_fare -> behavior_manager
+behavior_manager -> /navigation/current_pose, /navigation/target_pose -> map_planner
+map_planner -> /navigation/turn_queue -> autonomy/behavior logic
+behavior_manager -> /autonomy/driving_allowed -> autonomy_node
+```
+
+## Performance Highlights
+
+The final report documents the following validation results:
+
+- **Semantic segmentation validation accuracy**: approximately **98.9%**, exceeding the 96% target.
+- **Straight-line lane following**: completed all consecutive straight-line trials.
+- **Left turns**: **4/4** successful trials.
+- **Right turns**: **3/4** successful trials, with the remaining issue attributed mainly to lighting.
+- **Stop behavior**: **20/20** complete stops in stop-condition trials.
+- **Obstacle emergency stop**: **5/5** successful controlled ultrasonic stop trials.
+- **Full autonomous fare-style runs**: **2/4** completed in integrated testing.
+
+The competition run itself was affected by a software deployment/version-control issue, so controlled validation trials are the better representation of the system's actual capability.
 
 ## Project Structure
 
-```
-elec392_project/
-├── examples/                                      # Sample code and demonstrations
-│   ├── 01_move.py                                 # Basic vehicle control example
-│   ├── 02_keyboard_control.py                     # Keyboard vehicle control example
-│   ├── 03_sound.py                                # Robot Hat sound examples (use sudo)
-│   ├── 04_ultrasonic_obstacle_avoidance.py        # Obstacle avoidance example using ultrasonic sensor
-│   ├── 05_line_following.py                       # Line following demonstration
-│   ├── 06_send_detections_udp.py                  # Receive object detections via UDP from remote detector
-│   └── 07_receive_detections_udp.py               # Send sample detections via UDP (for testing)
-├── images/                                        # Folder for project images referenced by logbook
-├── logbook/                                       # Folder for log entries 
-│   ├── .templates
-│   │   └── daily-entry-template.md                # Log entry template
-│   ├── week-01/                                   
-│   │   └── 2025-01-08_example-circuit-design.md   # Example log entry
-│   ├── ...                                        
-│   ├── week-12/
-│   ├── generate_activity_report.py                # Auto-grader for logbook entries                                  
-│   └── README.md                                  # Logbook instructions
-├── sound/                                         # Sound files (.mp3, .wav)
-├── src/                                           # Where your code should go
-├── utils/                                         # Autonomous driving utilities
-│   ├── __init__.py
-│   ├── actuator_calibration.py                    # Motor and servo calibration
-│   ├── camera_calibration.py                      # Camera calibration using chessboard pattern
-│   ├── capture_images.py                          # Capture images from Raspberry Pi camera
-│   ├── detection_receiver.py                      # UDP detection receiver class
-│   ├── detection_sender.py                        # UDP detection sender class
-│   ├── grayscale_calibration.py                   # Grayscale (line follower) sensor calibration
-│   ├── servo_zeroing.py                           # Script to zero servos
-│   └── troubleshooting.md                         # Common issues and solutions
-├── README.md                                      # This file
-├── setup_coral.sh                                 # Bash script to install coral repos 
-├── setup_picarx.sh                                # Bash script to isntall picar-x repos and dependencies
-└── requirements.txt                               # Python dependencies
+```text
+Autonomous-PiCar/
+|-- README.md
+|-- LICENSE
+|-- requirements.txt
+|-- setup_coral.sh
+|-- setup_picarx.sh
+|-- ELEC392_Final_Report.pdf
+|-- segmentation_models/
+|   |-- segmentation_v5.tflite
+|   |-- segmentation_final_edgetpu*.tflite
+|-- ros2_ws/
+|   |-- scripts/
+|   |   |-- run.sh
+|   |   |-- line_follow.sh
+|   |   |-- line_follow_fast.sh
+|   |   |-- behavior.sh
+|   |   |-- localization.sh
+|   |   |-- navigation.sh
+|   |   |-- emergency_stop.sh
+|   |   |-- vpfs_queue_system.sh
+|   |   |-- controller.py
+|   |   |-- stdin_to_cmdvel.py
+|   |   `-- timelapse.sh
+|   |-- src/
+|   |   |-- behavior_pkg/
+|   |   |   |-- src/behavior_manager.cpp
+|   |   |   |-- CMakeLists.txt
+|   |   |   `-- package.xml
+|   |   |-- control_pkg/
+|   |   |   |-- src/lane_follow.cpp
+|   |   |   |-- src/pid.cpp
+|   |   |   |-- CMakeLists.txt
+|   |   |   `-- package.xml
+|   |   |-- hardware_pkg/
+|   |   |   |-- hardware_pkg/cmd_vel_to_robocar.py
+|   |   |   |-- hardware_pkg/ultrasonic.py
+|   |   |   |-- hardware_pkg/grayscale.py
+|   |   |   |-- hardware_pkg/speaker.py
+|   |   |   |-- launch/
+|   |   |   |-- setup.py
+|   |   |   `-- package.xml
+|   |   |-- localization_pkg/
+|   |   |   |-- localization_pkg/vpfs_queue_bridge.py
+|   |   |   |-- localization_pkg/vpfs.py
+|   |   |   |-- localization_pkg/odometry.py
+|   |   |   |-- setup.py
+|   |   |   `-- package.xml
+|   |   |-- navigation_pkg/
+|   |   |   |-- src/mapping.cpp
+|   |   |   |-- config/map_nodes.csv
+|   |   |   |-- config/map_edges.csv
+|   |   |   |-- CMakeLists.txt
+|   |   |   `-- package.xml
+|   |   |-- perception/
+|   |   |   |-- perception/segmentation_node.py
+|   |   |   |-- perception/autonomy_node.py
+|   |   |   |-- launch/line_following.launch.py
+|   |   |   |-- test_mask_output.py
+|   |   |   |-- setup.py
+|   |   |   `-- package.xml
+|   |   `-- robocar_base/
+|   |       |-- robocar_base/cmd_vel_to_robocar.py
+|   |       |-- robocar_base/rpi_cam_stream_node.py
+|   |       |-- robocar_base/video_recorder_node.py
+|   |       |-- robocar_base/camera.py
+|   |       |-- launch/
+|   |       |-- setup.py
+|   |       `-- package.xml
+|   `-- robot-hat/
+|       `-- Robot HAT Python driver library and docs
+|-- utils/
+|   |-- actuator_calibration.py
+|   |-- camera_calibration.py
+|   |-- capture_images.py
+|   |-- detection_receiver.py
+|   |-- detection_sender.py
+|   |-- grayscale_calibration.py
+|   |-- servo_zeroing.py
+|   `-- troubleshooting.md
+|-- images/
+|   |-- camera_calibration/
+|   |-- week3/
+|   |-- week5/
+|   |-- week7/
+|   |-- week8/
+|   |-- week-09/
+|   |-- week-10/
+|   `-- week-12/
+|-- recordings/
+|-- sound/
+`-- logbook/
+    |-- README.md
+    |-- generate_activity_report.py
+    |-- week-01/
+    |-- week-02/
+    |-- week-03/
+    |-- week-04/
+    |-- week-05/
+    |-- week-06/
+    |-- week-07/
+    |-- week-08/
+    |-- week-09/
+    |-- week-10/
+    `-- week-12/
 ```
 
 ## Hardware Requirements
 
-- Sunfounder PiCar-X robot car
-- Raspberry Pi 4B
-- Coral USB Accelerator
-- Camera module (Pi Camera or compatible)
+- SunFounder PiCar-X robot car
+- Raspberry Pi 4B or compatible Raspberry Pi capable of running ROS 2
+- Google Coral USB Accelerator
+- Raspberry Pi camera module or compatible camera
 - Ultrasonic distance sensor
-- Line tracking (grayscale) sensors
+- Line tracking/grayscale sensors
+- Robot HAT motor/servo controller
+- Rear brake lights, left/right turn signals, and visible warning LEDs
+- Speaker or audio output for alert sounds
+- CARE passenger restraint system
+- Printed AprilTag for VPFS tracking
 
 ## Software Requirements
 
+- Ubuntu Server or Raspberry Pi OS compatible with ROS 2 deployment
+- ROS 2 Humble
 - Python 3.9+
-- Raspberry Pi OS (Bookworm)
+- C++17-compatible compiler for ROS 2 C++ packages
+- TensorFlow Lite runtime
+- Coral Edge TPU runtime and compiler support
+- OpenCV
+- Colcon and standard ROS 2 build tools
+- Robot HAT Python drivers
 - See `requirements.txt` for Python dependencies
 
 ## Installation
-1. Accept the GitHub Classroom assignment to create your personal repository copy
 
-1. Create a development folder:
-   ```bash
-   cd ~
-   mkdir dev
-   cd dev
-   ```
-
-1. Clone your repository to your Raspberry Pi:
-   ```bash
-   git clone <your-classroom-repository-url>
-   cd elec392_project
-   ```
-
-1. Install PiCar-X repos
-   ```bash
-   bash setup_picarx.sh 
-   ```
-
-1. Install Coral repos
-   ```bash
-   bash setup_coral.sh 
-   ```
-
-## Usage
-
-### Running Example Scripts
-
-All example scripts are located in the `examples/` directory. Run them from the repository root:
-
-#### 1. Basic Movement (`01_move.py`)
-Tests all motors and servos: forward motion, steering, and camera pan/tilt.
+Clone the repository on the Raspberry Pi:
 
 ```bash
-python examples/01_move.py
+git clone <repository-url>
+cd Autonomous-PiCar
 ```
 
-**What it does:**
-- Drives forward briefly
-- Sweeps steering servo left and right
-- Tests camera pan and tilt servos
-
-#### 2. Keyboard Control (`02_keyboard_control.py`)
-Drive the PiCar-X manually using keyboard input.
+Install the PiCar-X and Robot HAT dependencies:
 
 ```bash
-python examples/02_keyboard_control.py
+bash setup_picarx.sh
 ```
 
-**Controls:**
-- `w` - Forward
-- `s` - Backward  
-- `a` - Turn left
-- `d` - Turn right
-- `i/k` - Camera tilt up/down
-- `j/l` - Camera pan left/right
-- `Ctrl+C` - Exit (press twice)
-
-#### 3. Sound Effects (`03_sound.py`)
-Play sound effects and text-to-speech (requires sudo for audio).
+Install Coral USB Accelerator dependencies:
 
 ```bash
-sudo python examples/03_sound.py
+bash setup_coral.sh
 ```
 
-**Controls:**
-- `space` - Play car horn sound
-- `c` - Play sound in background thread
-- `t` - Text-to-speech greeting
-- `q` - Play/stop background music
-
-#### 4. Ultrasonic Obstacle Avoidance (`04_ultrasonic_obstacle_avoidance.py`)
-Autonomous obstacle avoidance using the ultrasonic distance sensor.
+Build the ROS 2 workspace:
 
 ```bash
-python examples/04_ultrasonic_obstacle_avoidance.py
+cd ros2_ws
+source /opt/ros/humble/setup.bash
+colcon build
+source install/setup.bash
 ```
 
-**Behavior:**
-- Distance > 40cm: Drive straight
-- Distance 20-40cm: Turn to avoid
-- Distance < 20cm: Reverse and turn
+## Running the System
 
-#### 5. Line Following (`05_line_following.py`)
-Follow a dark line on a light background using grayscale sensors.
+The main integrated runner is:
 
 ```bash
-python examples/05_line_following.py
+cd ros2_ws
+bash scripts/run.sh
 ```
 
-**Note:** Requires grayscale sensor calibration first:
+Useful options:
+
 ```bash
-python utils/grayscale_calibration.py
+# Skip rebuilding before launch
+bash scripts/run.sh --no-build
+
+# Enable debug logging for key autonomy, VPFS, and planner nodes
+bash scripts/run.sh --debug
 ```
 
-#### 6. UDP Detection Receiver (`06_receive_detections_udp.py`)
-Receive object detection data from a remote detector via UDP and control the vehicle based on detections.
+Targeted launch scripts are also available in `ros2_ws/scripts/` for line following, behavior, localization, navigation, emergency stop testing, and VPFS queue testing.
+
+### Common ROS 2 Commands
+
+Run the perception pipeline:
 
 ```bash
-python examples/06_receive_detections_udp.py
+ros2 run perception segmentation_node
+ros2 run perception autonomy_node
 ```
 
-**What it does:**
-- Listens for object detection data over UDP from a remote detector (e.g., Coral TPU inference on another device)
-- Displays detection updates to the console
-- Controls the steering servo based on whether objects are detected
-- Acts as a fail-safe by stopping the car if no detections are received
-
-**Requirements:**
-- A remote detector sending detection data in UDP format (see `utils/detection_receiver.py` for protocol details)
-- Network connectivity between the Raspberry Pi and the detector
-
-### Calibration Utilities
-
-Before using certain features, calibrate the sensors:
+Run hardware control:
 
 ```bash
-# Zero all servos to neutral position
+ros2 run hardware_pkg cmd_vel_to_robocar
+ros2 run hardware_pkg ultrasonic
+```
+
+Run high-level autonomy components:
+
+```bash
+ros2 run behavior_pkg behavior_manager
+ros2 run localization_pkg vpfs_queue_bridge
+ros2 run navigation_pkg map_planner
+```
+
+## Calibration and Utilities
+
+Calibration scripts are provided for setup and hardware bring-up:
+
+```bash
+# Zero servos to a known neutral position
 python utils/servo_zeroing.py
 
-# Calibrate motor speeds for straight driving
+# Calibrate motor and steering behavior
 python utils/actuator_calibration.py
 
-# Calibrate grayscale sensors for line following
+# Calibrate grayscale sensors
 python utils/grayscale_calibration.py
+
+# Capture camera data for calibration or model development
+python utils/capture_images.py
+
+# Run camera calibration
+python utils/camera_calibration.py
 ```
 
-### Logbook Activity Report
+Additional troubleshooting notes are available in `utils/troubleshooting.md`.
 
-Generate an activity report for your logbook entries:
+## Development Notes
 
-```bash
-python logbook/generate_activity_report.py . --output my-report.md
-```
-
-### Student Code (src/)
-
-Teams should place all project-specific Python code in the `src/` folder. Keep modules organized by feature and use clear names. A minimal structure example:
-
-```
-src/
-├── __init__.py
-├── controllers/
-│   ├── __init__.py
-│   └── lane_follower.py
-└── sensors/
-   ├── __init__.py
-   └── ultrasonic.py
-```
-
-Import your code from example scripts or your own runners like this:
-
-```python
-# in examples/my_demo.py
-from src.controllers.lane_follower import LaneFollower
-from src.sensors.ultrasonic import UltrasonicSensor
-
-lf = LaneFollower()
-sensor = UltrasonicSensor()
-```
-
-Guidelines:
-- Group related code into subpackages (e.g., `controllers/`, `sensors/`, `planning/`).
-- Avoid placing team code in `examples/`; keep `examples/` for runnable demos.
-- Write small, testable modules; prefer functions/classes over monolithic scripts.
-- Add `__init__.py` in subfolders so imports work reliably.
-
-## Contributing
-
-This is a course project repository. Contributions should follow the course guidelines and be coordinated with the instructor.
-
-## License
-
-See LICENSE file for details.
+- The autonomy stack is intentionally modular so each subsystem can be tested independently with `ros2 topic echo`, `ros2 topic pub`, and package-specific launch scripts.
+- The vision model was trained from vehicle camera data collected in the Quackston environment and labeled with pixel-wise masks.
+- Training used augmentation for lighting, motion blur, exposure variation, shear, and noise before conversion to TensorFlow Lite for Edge TPU deployment.
+- Navigation map data lives in `ros2_ws/src/navigation_pkg/config/map_nodes.csv` and `ros2_ws/src/navigation_pkg/config/map_edges.csv`.
+- Development history, design decisions, testing notes, and weekly progress are documented in `logbook/`.
+- The final engineering report is included as `ELEC392_Final_Report.pdf`.
 
 ## Course Information
 
-**Course**: ELEC 392 - Engineering Design and Development
-**Institution**: Smith Engineering, Queen's University
-**Offering**: Winter 2026 
+**Course**: ELEC 392 - Engineering Design and Development  
+**Institution**: Smith Engineering, Queen's University  
+**Offering**: Winter 2026  
+**Team**: Rust-eze / Blekinge 12
+
+## License
+
+See `LICENSE` for details.
